@@ -3,10 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Copy, Check, RefreshCw, Instagram, Send, Info, Twitter, Linkedin, MessageCircle, Link2, Music2, Ghost, Eye, X } from 'lucide-react';
+import { Sparkles, Copy, Check, RefreshCw, Instagram, Send, Info, Twitter, Linkedin, MessageCircle, Link2, Music2, Ghost, Eye, X, LogIn, LogOut, User as UserIcon, History } from 'lucide-react';
 import { generateBios, GeneratedBio } from './services/gemini';
+import { useAuth } from './contexts/AuthContext';
+import { db, collection, addDoc, Timestamp, query, where, orderBy, onSnapshot } from './firebase';
 
 const PLATFORMS = [
   { id: 'instagram', name: 'انستقرام', icon: Instagram, color: 'from-purple-500 via-pink-500 to-orange-500' },
@@ -26,16 +28,42 @@ const LANGUAGES = [
 ];
 
 export default function App() {
+  const { user, login, logout, loading: authLoading } = useAuth();
   const [input, setInput] = useState('');
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState('ar');
   const [loading, setLoading] = useState(false);
   const [bios, setBios] = useState<GeneratedBio[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const [greeting, setGreeting] = useState<string>('');
   const [tip, setTip] = useState<string>('');
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewBio, setPreviewBio] = useState<GeneratedBio | null>(null);
+
+  // Fetch history if user is logged in
+  useEffect(() => {
+    if (!user) {
+      setHistory([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'bios'),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setHistory(docs);
+    }, (err) => {
+      console.error("Firestore history error:", err);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   const togglePlatform = (id: string) => {
     setSelectedPlatforms(prev => 
@@ -61,6 +89,26 @@ export default function App() {
       setBios(response.bios);
       setGreeting(response.greeting);
       setTip(response.tip);
+
+      // Save to Firestore if logged in
+      if (user) {
+        try {
+          const savePromises = response.bios.map(bio => 
+            addDoc(collection(db, 'bios'), {
+              userId: user.uid,
+              content: bio.content,
+              style: bio.style,
+              emoji: bio.emoji,
+              platform: selectedPlatforms[0] || 'general',
+              language: selectedLanguage,
+              createdAt: Timestamp.now()
+            })
+          );
+          await Promise.all(savePromises);
+        } catch (saveErr) {
+          console.error("Failed to save bios to history", saveErr);
+        }
+      }
     } catch (err: any) {
       if (err.message === 'EMPTY_RESPONSE') {
         setError('لم يتمكن الذكاء الاصطناعي من توليد نتائج. قد يكون النص المدخل غير واضح أو مخالف لسياسات المحتوى.');
@@ -150,6 +198,52 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#fafafa] text-[#1a1a1a] font-sans selection:bg-emerald-100" dir="rtl">
+      {/* Navigation / Auth */}
+      <nav className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+        <div className="flex items-center gap-4">
+          {user ? (
+            <div className="flex items-center gap-3 bg-white p-1.5 pr-4 rounded-full border border-zinc-100 shadow-sm">
+              <div className="text-right">
+                <p className="text-xs font-bold text-zinc-900 leading-none">{user.displayName}</p>
+                <p className="text-[10px] text-zinc-500">{user.email}</p>
+              </div>
+              {user.photoURL ? (
+                <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full border border-zinc-200" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400">
+                  <UserIcon size={16} />
+                </div>
+              )}
+              <button 
+                onClick={logout}
+                className="p-2 hover:bg-red-50 hover:text-red-500 rounded-full transition-colors"
+                title="تسجيل الخروج"
+              >
+                <LogOut size={18} />
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={login}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-zinc-200 rounded-full text-sm font-bold hover:bg-zinc-50 transition-all shadow-sm"
+            >
+              <LogIn size={18} />
+              <span>تسجيل الدخول</span>
+            </button>
+          )}
+        </div>
+
+        {user && (
+          <button 
+            onClick={() => setShowHistory(!showHistory)}
+            className={`p-2 rounded-full transition-all ${showHistory ? 'bg-zinc-900 text-white' : 'bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50'}`}
+            title="السجل"
+          >
+            <History size={20} />
+          </button>
+        )}
+      </nav>
+
       {/* Header */}
       <header className="max-w-4xl mx-auto pt-12 pb-8 px-6 text-center">
         <motion.div
@@ -184,7 +278,44 @@ export default function App() {
           animate={{ opacity: 1, y: 0 }}
           className="bg-white rounded-3xl shadow-sm border border-zinc-100 p-6 md:p-8 mb-12"
         >
-          <div className="space-y-4">
+          {showHistory && user ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-zinc-900">سجل البايو الخاص بك</h3>
+                <button onClick={() => setShowHistory(false)} className="text-sm text-emerald-600 font-bold">العودة للكتابة</button>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                {history.length > 0 ? (
+                  history.map((item, idx) => (
+                    <div key={item.id} className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100 relative group">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">{item.emoji}</span>
+                          <span className="text-sm font-bold text-zinc-700">{item.style}</span>
+                        </div>
+                        <button 
+                          onClick={() => copyToClipboard(item.content, idx + 100)}
+                          className="p-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white rounded-lg shadow-sm"
+                        >
+                          {copiedIndex === idx + 100 ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} className="text-zinc-400" />}
+                        </button>
+                      </div>
+                      <p className="text-sm text-zinc-600 leading-relaxed">{item.content}</p>
+                      <div className="mt-2 text-[10px] text-zinc-400">
+                        {item.createdAt?.toDate().toLocaleDateString('ar-SA')}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-12 text-zinc-400">
+                    <History size={48} className="mx-auto mb-4 opacity-20" />
+                    <p>لا يوجد سجل حتى الآن</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
             <label className="block text-sm font-semibold text-zinc-700 mb-2">
               ماذا تريد أن يظهر في البايو الخاص بك؟
             </label>
@@ -268,6 +399,7 @@ export default function App() {
               )}
             </button>
           </div>
+          )}
           {error && (
             <p className="mt-4 text-red-500 text-sm text-center">{error}</p>
           )}
