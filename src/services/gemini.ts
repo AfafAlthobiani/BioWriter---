@@ -1,5 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
+const apiKey = process.env.GEMINI_API_KEY;
+
 export interface GeneratedBio {
   style: string;
   content: string;
@@ -13,10 +15,7 @@ export interface BioGenerationResponse {
 }
 
 export async function generateBios(userInput: string, platforms: string[], language: string = 'ar'): Promise<BioGenerationResponse> {
-  const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
-  
   if (!apiKey) {
-    console.error("Gemini API key is missing in process.env and import.meta.env");
     throw new Error("Gemini API key is missing");
   }
 
