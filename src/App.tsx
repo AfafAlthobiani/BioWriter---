@@ -5,8 +5,9 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Copy, Check, RefreshCw, Instagram, Send, Info, Twitter, Linkedin, MessageCircle, Link2, Music2, Ghost, Eye, X } from 'lucide-react';
-import { generateBios, GeneratedBio } from './services/gemini';
+import { Sparkles, Copy, Check, RefreshCw, Instagram, Send, Info, Twitter, Linkedin, MessageCircle, Link2, Music2, Ghost, Eye, X, Wand2, Trash2 } from 'lucide-react';
+import { generateBios, GeneratedBio, analyzeBioContent } from './services/gemini';
+import ChatBot from './components/ChatBot';
 
 const PLATFORMS = [
   { id: 'instagram', name: 'انستقرام', icon: Instagram, color: 'from-purple-500 via-pink-500 to-orange-500' },
@@ -25,6 +26,36 @@ const LANGUAGES = [
   { id: 'es', name: 'Español', flag: '🇪🇸' },
 ];
 
+const AnimatedPlatformIcons = () => {
+  const [index, setIndex] = useState(0);
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setIndex((prev) => (prev + 1) % PLATFORMS.length);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const ActiveIcon = PLATFORMS[index].icon;
+
+  return (
+    <div className="h-16 mb-4 flex items-center justify-center overflow-hidden">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={index}
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -20, opacity: 0 }}
+          transition={{ duration: 0.5, ease: "easeInOut" }}
+          className="text-zinc-300"
+        >
+          <ActiveIcon size={64} strokeWidth={1.5} />
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+};
+
 export default function App() {
   const [input, setInput] = useState('');
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
@@ -36,6 +67,21 @@ export default function App() {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewBio, setPreviewBio] = useState<GeneratedBio | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState<number | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+
+  const handleAnalyze = async (bio: string, index: number) => {
+    setAnalysisLoading(index);
+    try {
+      const result = await analyzeBioContent(bio, "حلل هذا البايو وقدم نصيحة واحدة لتحسينه");
+      setAnalysisResult(result);
+    } catch (err) {
+      console.error(err);
+      setError('فشل تحليل البايو.');
+    } finally {
+      setAnalysisLoading(null);
+    }
+  };
 
   const togglePlatform = (id: string) => {
     setSelectedPlatforms(prev => 
@@ -151,7 +197,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#fafafa] text-[#1a1a1a] font-sans selection:bg-emerald-100" dir="rtl">
       {/* Header */}
-      <header className="max-w-4xl mx-auto pt-12 pb-8 px-6 text-center">
+      <header id="app-header" className="max-w-4xl mx-auto pt-12 pb-8 px-6 text-center">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -188,12 +234,24 @@ export default function App() {
             <label className="block text-sm font-semibold text-zinc-700 mb-2">
               ماذا تريد أن يظهر في البايو الخاص بك؟
             </label>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="مثال: مصور فوتوغرافي، أحب السفر والقهوة، أعيش في الرياض..."
-              className="w-full h-32 p-4 rounded-2xl bg-zinc-50 border-none focus:ring-2 focus:ring-emerald-500/20 transition-all resize-none text-lg"
-            />
+            <div className="relative">
+              <textarea
+                id="bio-input"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="مثال: مصور فوتوغرافي، أحب السفر والقهوة، أعيش في الرياض..."
+                className="w-full h-32 p-4 rounded-2xl bg-zinc-50 border-none focus:ring-2 focus:ring-emerald-500/20 transition-all resize-none text-lg"
+              />
+              {input && (
+                <button
+                  onClick={() => setInput('')}
+                  className="absolute top-3 left-3 p-2 bg-white/80 backdrop-blur-sm text-zinc-400 hover:text-red-500 rounded-xl shadow-sm transition-all"
+                  title="مسح النص"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
+            </div>
 
             <div className="space-y-3">
               <label className="block text-sm font-semibold text-zinc-700">
@@ -305,6 +363,13 @@ export default function App() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
+                      onClick={() => handleAnalyze(bio.content, index)}
+                      className="p-2 rounded-xl bg-zinc-50 text-zinc-500 hover:bg-purple-50 hover:text-purple-600 transition-colors"
+                      title="تحليل ذكي"
+                    >
+                      {analysisLoading === index ? <RefreshCw size={18} className="animate-spin" /> : <Wand2 size={18} />}
+                    </button>
+                    <button
                       onClick={() => setPreviewBio(bio)}
                       className="p-2 rounded-xl bg-zinc-50 text-zinc-500 hover:bg-blue-50 hover:text-blue-600 transition-colors"
                       title="معاينة"
@@ -362,11 +427,35 @@ export default function App() {
         </AnimatePresence>
 
         {bios.length === 0 && !loading && (
-          <div className="text-center py-12 opacity-20">
-            <Instagram size={64} className="mx-auto mb-4" />
-            <p>بانتظار إبداعك...</p>
+          <div className="text-center py-12 opacity-40">
+            <AnimatedPlatformIcons />
+            <p className="text-zinc-400 font-medium">بانتظار إبداعك...</p>
           </div>
         )}
+        <AnimatePresence>
+          {analysisResult && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+              onClick={() => setAnalysisResult(null)}
+            >
+              <div className="bg-white p-8 rounded-[32px] max-w-md shadow-2xl relative" onClick={e => e.stopPropagation()}>
+                <button onClick={() => setAnalysisResult(null)} className="absolute top-4 left-4 p-2 hover:bg-zinc-100 rounded-full">
+                  <X size={20} />
+                </button>
+                <div className="flex items-center gap-3 mb-4 text-purple-600">
+                  <Wand2 size={24} />
+                  <h3 className="font-bold text-xl">تحليل الذكاء الاصطناعي</h3>
+                </div>
+                <p className="text-zinc-700 leading-relaxed">{analysisResult}</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <ChatBot />
       </main>
 
       {/* Footer */}

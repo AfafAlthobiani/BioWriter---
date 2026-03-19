@@ -14,6 +14,11 @@ export interface BioGenerationResponse {
   tip: string;
 }
 
+export interface ChatMessage {
+  role: 'user' | 'model';
+  text: string;
+}
+
 export async function generateBios(userInput: string, platforms: string[], language: string = 'ar'): Promise<BioGenerationResponse> {
   if (!apiKey) {
     throw new Error("Gemini API key is missing");
@@ -30,7 +35,7 @@ export async function generateBios(userInput: string, platforms: string[], langu
 
   const ai = new GoogleGenAI({ apiKey });
   const model = ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-3.1-flash-lite-preview",
     contents: `Convert this info into 4 professional bio options for (${platformsText}) in ${language === 'ar' ? 'Arabic' : language}: "${userInput}"`,
     config: {
       systemInstruction: `You are a creative assistant specialized in writing social media bios.
@@ -85,4 +90,55 @@ The response MUST be in JSON format containing:
     console.error("Failed to parse Gemini response", e);
     throw new Error("PARSE_ERROR");
   }
+}
+
+/**
+ * Feature: AI powered chatbot
+ * Uses gemini-3.1-pro-preview with history support
+ */
+export async function chatWithGemini(message: string, history: ChatMessage[] = []): Promise<string> {
+  if (!apiKey) throw new Error("Gemini API key is missing");
+
+  const ai = new GoogleGenAI({ apiKey });
+  
+  // Format history for Gemini API
+  const contents = history.map(msg => ({
+    role: msg.role,
+    parts: [{ text: msg.text }]
+  }));
+
+  // Add the current message
+  contents.push({
+    role: 'user',
+    parts: [{ text: message }]
+  });
+
+  const response = await ai.models.generateContent({
+    model: "gemini-3.1-pro-preview",
+    contents,
+    config: {
+      systemInstruction: "You are a helpful assistant for a social media bio generator app. Help users refine their bios, suggest ideas, and answer questions about social media presence. Keep responses concise and friendly. Use the same language as the user."
+    }
+  });
+
+  return response.text || "";
+}
+
+/**
+ * Feature: Gemini intelligence in your app
+ * Analyze content or make edits
+ */
+export async function analyzeBioContent(bio: string, task: string): Promise<string> {
+  if (!apiKey) throw new Error("Gemini API key is missing");
+
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.generateContent({
+    model: "gemini-3.1-pro-preview",
+    contents: `Task: ${task}\nBio: ${bio}`,
+    config: {
+      systemInstruction: "You are an expert social media strategist. Analyze the provided bio or perform the requested edit to make it more impactful."
+    }
+  });
+
+  return response.text || "";
 }
